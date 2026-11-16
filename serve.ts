@@ -1,0 +1,66 @@
+// Emberkeep dev server (Node 22, stdlib only). Serves game/ on
+// http://localhost:8080 so the game can be played locally without a
+// build step. It only serves files inside game/, sends the MIME types a
+// browser game needs, and does nothing else.
+//
+//   node serve.ts [--port 8080]
+
+import { createReadStream, statSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { extname, join, normalize, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(fileURLToPath(new URL('./game', import.meta.url)));
+const args = process.argv.slice(2);
+const portArg = args.indexOf('--port');
+const wanted = portArg === -1 ? 8080 : Number(args[portArg + 1]);
+const port = Number.isInteger(wanted) && wanted > 0 && wanted < 65536 ? wanted : 8080;
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+createServer((req, res) => {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  const rel = normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, '');
+  const file = resolve(join(root, rel));
+  if (!file.startsWith(root + sep) && file !== root) {
+    res.writeHead(403);
+    res.end('forbidden');
+    return;
+  }
+  const target = file === root ? join(root, 'index.html') : file;
+  let stat;
+  try {
+    stat = statSync(target);
+  } catch {
+    res.writeHead(404);
+    res.end('not found');
+    return;
+  }
+  if (!stat.isFile()) {
+    res.writeHead(404);
+    res.end('not found');
+    return;
+  }
+  res.writeHead(200, { 'content-type': MIME[extname(target)] ?? 'application/octet-stream' });
+  createReadStream(target).pipe(res);
+}).listen(port, () => {
+  console.log(`Emberkeep at http://localhost:${port}`);
+});
